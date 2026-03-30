@@ -15,6 +15,7 @@
  *   SBOM_PATH         – path to the generated SBOM file (bom.json / bom.xml)
  */
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { readFileSync } from 'node:fs';
 
 const {

@@ -13,6 +13,7 @@
  *   argocdAppUrlDev  = <ARGOCD_BASE_URL>/applications/argocd/app-<componentName>-dev
  */
 
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { appendFileSync } from 'node:fs';
 
 const { ARGOCD_BASE_URL, ARGOCD_TOKEN, COMPONENT_NAME } = process.env;
