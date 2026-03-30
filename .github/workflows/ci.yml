@@ -119,37 +119,10 @@ jobs:
         run: node scripts/dependency-track.mjs
 
   # ──────────────────────────────────────────────────────────────
-  # 4. ArgoCD Check (dev)
-  # ──────────────────────────────────────────────────────────────
-  argocd_check:
-    needs: build_test
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      argocd_app_name_dev: ${{ steps.argocd.outputs.argocd_app_name_dev }}
-      argocd_app_url_dev: ${{ steps.argocd.outputs.argocd_app_url_dev }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Check ArgoCD app
-        id: argocd
-        working-directory: .
-        env:
-          ARGOCD_BASE_URL: ${{ secrets.ARGOCD_BASE_URL }}
-          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
-          COMPONENT_NAME: ${{ env.COMPONENT_NAME }}
-        run: node scripts/argocd-check.mjs
-
-  # ──────────────────────────────────────────────────────────────
   # 5. Backstage Catalog PR
   # ──────────────────────────────────────────────────────────────
   backstage_catalog_pr:
-    needs: [container_publish, dependency_track, argocd_check]
+    needs: [container_publish, dependency_track]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -170,6 +143,4 @@ jobs:
           DEPENDENCY_TRACK_PROJECT_ID: ${{ needs.dependency_track.outputs.dependency_track_project_id }}
           HARBOR_REPOSITORY_SLUG: ${{ needs.container_publish.outputs.harbor_repository_slug }}
           IMAGE_REF: ${{ needs.container_publish.outputs.image_ref }}
-          ARGOCD_APP_NAME_DEV: ${{ needs.argocd_check.outputs.argocd_app_name_dev }}
-          ARGOCD_APP_URL_DEV: ${{ needs.argocd_check.outputs.argocd_app_url_dev }}
         run: node scripts/trigger-backstage-catalog.mjs
