@@ -1,5 +1,5 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 #!/usr/bin/env node
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 /**
  * Trigger Backstage Scaffolder to create a catalog component PR.
