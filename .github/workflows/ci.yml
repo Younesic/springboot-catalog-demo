@@ -1,0 +1,179 @@
+name: CI – Spring Boot Catalog Demo
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+env:
+  COMPONENT_NAME: springboot-catalog-demo
+  HARBOR_PROJECT: platform
+
+defaults:
+  run:
+    working-directory: catalog-ci-samples/springboot-catalog-demo
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # 1. Build + Test
+  # ──────────────────────────────────────────────────────────────
+  build_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build & Test
+        run: ./mvnw -B verify
+
+  # ──────────────────────────────────────────────────────────────
+  # 2. Container Publish (Harbor)
+  # ──────────────────────────────────────────────────────────────
+  container_publish:
+    needs: build_test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      harbor_repository_slug: ${{ steps.meta.outputs.harbor_repository_slug }}
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build JAR (skip tests – already passed)
+        run: ./mvnw -B package -DskipTests
+
+      - name: Compute image metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          SLUG="${HARBOR_PROJECT}/${COMPONENT_NAME}"
+          REF="${{ secrets.HARBOR_REGISTRY }}/${SLUG}:${SHORT_SHA}"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "harbor_repository_slug=${SLUG}" >> "$GITHUB_OUTPUT"
+          echo "image_ref=${REF}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build & Push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: catalog-ci-samples/springboot-catalog-demo
+          push: true
+          tags: |
+            ${{ secrets.HARBOR_REGISTRY }}/${{ env.HARBOR_PROJECT }}/${{ env.COMPONENT_NAME }}:${{ steps.meta.outputs.short_sha }}
+            ${{ secrets.HARBOR_REGISTRY }}/${{ env.HARBOR_PROJECT }}/${{ env.COMPONENT_NAME }}:latest
+
+  # ──────────────────────────────────────────────────────────────
+  # 3. Dependency-Track (SBOM)
+  # ──────────────────────────────────────────────────────────────
+  dependency_track:
+    needs: build_test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      dependency_track_project_id: ${{ steps.dtrack.outputs.dependency_track_project_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Generate CycloneDX SBOM
+        working-directory: catalog-ci-samples/springboot-catalog-demo
+        run: |
+          ./mvnw -B org.cyclonedx:cyclonedx-maven-plugin:2.8.2:makeAggregateBom
+          cp target/bom.json bom.json
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Upload BOM to Dependency-Track
+        id: dtrack
+        working-directory: catalog-ci-samples/springboot-catalog-demo
+        env:
+          DTRACK_BASE_URL: ${{ secrets.DTRACK_BASE_URL }}
+          DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+          PROJECT_NAME: ${{ env.COMPONENT_NAME }}
+          PROJECT_VERSION: ${{ github.sha }}
+          SBOM_PATH: bom.json
+        run: node ../../scripts/dependency-track.mjs
+
+  # ──────────────────────────────────────────────────────────────
+  # 4. ArgoCD Check (dev)
+  # ──────────────────────────────────────────────────────────────
+  argocd_check:
+    needs: build_test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      argocd_app_name_dev: ${{ steps.argocd.outputs.argocd_app_name_dev }}
+      argocd_app_url_dev: ${{ steps.argocd.outputs.argocd_app_url_dev }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check ArgoCD app
+        id: argocd
+        working-directory: .
+        env:
+          ARGOCD_BASE_URL: ${{ secrets.ARGOCD_BASE_URL }}
+          ARGOCD_TOKEN: ${{ secrets.ARGOCD_TOKEN }}
+          COMPONENT_NAME: ${{ env.COMPONENT_NAME }}
+        run: node catalog-ci-samples/scripts/argocd-check.mjs
+
+  # ──────────────────────────────────────────────────────────────
+  # 5. Backstage Catalog PR
+  # ──────────────────────────────────────────────────────────────
+  backstage_catalog_pr:
+    needs: [container_publish, dependency_track, argocd_check]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Trigger Backstage Catalog
+        working-directory: .
+        env:
+          BACKSTAGE_URL: ${{ secrets.BACKSTAGE_URL }}
+          BACKSTAGE_TOKEN: ${{ secrets.BACKSTAGE_TOKEN }}
+          OWNER_GROUP_REF: ${{ secrets.OWNER_GROUP_REF }}
+          COMPONENT_NAME: ${{ env.COMPONENT_NAME }}
+          DEPENDENCY_TRACK_PROJECT_ID: ${{ needs.dependency_track.outputs.dependency_track_project_id }}
+          HARBOR_REPOSITORY_SLUG: ${{ needs.container_publish.outputs.harbor_repository_slug }}
+          IMAGE_REF: ${{ needs.container_publish.outputs.image_ref }}
+          ARGOCD_APP_NAME_DEV: ${{ needs.argocd_check.outputs.argocd_app_name_dev }}
+          ARGOCD_APP_URL_DEV: ${{ needs.argocd_check.outputs.argocd_app_url_dev }}
+        run: node catalog-ci-samples/scripts/trigger-backstage-catalog.mjs
