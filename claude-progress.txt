@@ -1,0 +1,21 @@
+# Claude Progress — springboot-catalog-demo
+Créé : 2026-03-30 16:59:18
+
+## 🎯 Objectif du projet
+<!-- Décris l'objectif principal en 2-3 lignes -->
+
+## ✅ Fait
+(vide — projet initialisé)
+
+## 🔄 En cours
+(rien)
+
+## 📋 À faire
+<!-- Claude ajoutera ici les tâches découvertes en cours de route -->
+
+## 🐛 Bugs connus
+(aucun)
+
+## 📝 Notes de session
+---
+[2026-03-30 16:59:18] Projet initialisé avec Claude Autopilot

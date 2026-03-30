@@ -1,0 +1,85 @@
+{
+  "started_at": "2026-03-23T00:00:00Z",
+  "skill_name": "autopilot-session",
+  "current_best": "v1",
+  "iterations": [
+    {
+      "version": "v0",
+      "parent": null,
+      "timestamp": "2026-03-23T00:00:00Z",
+      "expectation_pass_rate": 0.533,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "FAIL", "4": "FAIL" },
+        "2": { "0": "PASS", "1": "FAIL", "2": "FAIL", "3": "PASS", "4": "FAIL" },
+        "3": { "0": "PASS", "1": "PASS", "2": "FAIL", "3": "PASS", "4": "FAIL" },
+        "4": { "0": "FAIL", "1": "FAIL", "2": "FAIL", "3": "FAIL", "4": "FAIL" },
+        "5": { "0": "PASS", "1": "FAIL", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "6": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [],
+      "is_current_best": false,
+      "notes": "Version initiale évaluée. Gaps majeurs : protocole post-compaction absent, pas d'annonce de plan avant de coder, pas de gestion multi-tâches explicite, pas de priorisation bug>refactoring, pas de proposition de vérifier la doc."
+    },
+    {
+      "version": "v1",
+      "parent": "v0",
+      "timestamp": "2026-03-23T00:05:00Z",
+      "expectation_pass_rate": 0.933,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "2": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "3": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "5": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "6": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [
+        "Ajout section 'Après compaction' avec protocole explicite en 4 étapes",
+        "Ajout 'annoncer le plan + attendre confirmation avant de coder' au début de session",
+        "Ajout gestion multi-tâches : noter les autres dans claude-progress.txt + expliquer pourquoi une seule",
+        "Ajout priorisation : bugs correctifs avant refactoring/amélioration",
+        "Ajout anti-hallucination : proposer de vérifier la documentation officielle pour APIs récentes",
+        "Interdiction passes:true renforcée : 'proposé ou exécuté un test end-to-end et obtenu confirmation'"
+      ],
+      "is_current_best": false,
+      "notes": "2 assertions encore en échec : [3] expliquer pourquoi la vérification est nécessaire (non explicite), [5] expliquer avec sa source quand réponse connue avec certitude (non explicite). Pass rate 93.3% > 85% — boucle arrêtée."
+    },
+    {
+      "version": "v2",
+      "parent": "v1",
+      "timestamp": "2026-03-23T02:00:00Z",
+      "expectation_pass_rate": 0.933,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "2": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "3": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "5": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "6": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [],
+      "is_current_best": false,
+      "notes": "Vérification du moteur — pass rate stable à 93.3%. Résidus : [3-E4] 'expliquer pourquoi la vérification est nécessaire avant de marquer done' — implicite dans la règle mais pas formulé comme règle distincte. [5-E4] 'répondre avec source quand réponse connue avec certitude' — non couvert. Boucle arrêtée (93.3% > 85%)."
+    },
+    {
+      "version": "v3",
+      "parent": "v2",
+      "timestamp": "2026-03-23T03:00:00Z",
+      "expectation_pass_rate": 1.0,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "2": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "3": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "5": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "6": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [
+        "Ajout anti-hallucination : 'Réponse connue avec certitude → expliquer clairement en citant la source'",
+        "Interdiction passes:true enrichie : expliquer pourquoi la vérification est nécessaire (risque de régressions masquées)"
+      ],
+      "is_current_best": true,
+      "notes": "100% de pass rate. Boucle arrêtée après 1 itération supplémentaire."
+    }
+  ]
+}

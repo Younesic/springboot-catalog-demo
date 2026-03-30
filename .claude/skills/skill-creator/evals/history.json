@@ -1,0 +1,15 @@
+{
+  "started_at": null,
+  "skill_name": "skill-creator",
+  "current_best": "v0",
+  "iterations": [
+    {
+      "version": "v0",
+      "parent": null,
+      "expectation_pass_rate": null,
+      "grading_result": "baseline",
+      "is_current_best": true,
+      "notes": "Version initiale — pas encore évaluée"
+    }
+  ]
+}

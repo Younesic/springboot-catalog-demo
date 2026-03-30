@@ -1,0 +1,57 @@
+{
+  "skill_name": "autopilot-setup",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Je viens de créer un nouveau dossier vide pour un projet. Il n'y a aucun fichier. Configure autopilot.",
+      "expected_output": "L'agent détecte l'absence de tous les fichiers autopilot ET de fichiers projet, conclut que c'est un nouveau projet vierge, et lance claude-init. Il ne lance pas claude-retrofit. Après l'init, il passe au protocole autopilot-session.",
+      "files": [],
+      "expectations": [
+        "L'agent exécute une commande de détection (ls ou équivalent) pour vérifier la présence des fichiers autopilot",
+        "L'agent conclut que le projet est vierge (aucun fichier autopilot ni fichier projet détecté)",
+        "L'agent exécute `claude-init` et non `claude-retrofit`",
+        "L'agent NE demande PAS de confirmation inutile avant de lancer claude-init",
+        "L'agent mentionne de passer à autopilot-session une fois l'init terminé"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "J'ai un projet Next.js existant avec un package.json mais sans CLAUDE.md ni feature_list.json. Mets en place autopilot.",
+      "expected_output": "L'agent détecte package.json (projet existant) sans fichiers autopilot, conclut que c'est un projet existant qui nécessite un retrofit, et lance claude-retrofit. Il mentionne que la stack Next.js sera auto-détectée. Il ne lance pas claude-init.",
+      "files": ["package.json (contient \"next\")"],
+      "expectations": [
+        "L'agent exécute une commande de détection pour vérifier les fichiers autopilot ET les fichiers projet (package.json, requirements.txt)",
+        "L'agent identifie la présence de package.json et conclut que c'est un projet existant, même sans fichiers autopilot",
+        "L'agent exécute `claude-retrofit` et non `claude-init`",
+        "L'agent mentionne que la stack Next.js sera détectée automatiquement par claude-retrofit",
+        "L'agent NE crée PAS manuellement un CLAUDE.md avant de lancer claude-retrofit"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Mon projet a déjà un CLAUDE.md que j'ai écrit moi-même, mais pas de skills ni de feature_list.json. Configure autopilot sans toucher à mon CLAUDE.md.",
+      "expected_output": "L'agent détecte CLAUDE.md existant, identifie que les skills sont absents, conclut qu'il faut un retrofit. Il lance claude-retrofit en précisant que le CLAUDE.md existant sera préservé. Il ne lance pas claude-init.",
+      "files": ["CLAUDE.md"],
+      "expectations": [
+        "L'agent détecte la présence de CLAUDE.md via la commande de détection",
+        "L'agent identifie qu'il faut un retrofit (fichiers autopilot partiels ou skills absents)",
+        "L'agent exécute `claude-retrofit` et non `claude-init`",
+        "L'agent mentionne explicitement que le CLAUDE.md existant sera préservé par claude-retrofit",
+        "L'agent NE propose PAS d'écraser ou de modifier manuellement le CLAUDE.md avant le retrofit"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Est-ce que j'ai besoin de lancer autopilot-setup ? J'ai déjà CLAUDE.md, feature_list.json, claude-progress.txt et les skills dans .claude/skills/.",
+      "expected_output": "L'agent vérifie la présence de tous les fichiers autopilot, confirme que tout est présent, dit explicitement 'rien à faire' et passe directement au protocole autopilot-session. Il propose de lancer bash init.sh pour vérifier l'état.",
+      "files": ["CLAUDE.md", "feature_list.json", "claude-progress.txt", ".claude/skills/"],
+      "expectations": [
+        "L'agent exécute une commande de détection pour vérifier les fichiers autopilot et les skills",
+        "L'agent indique explicitement qu'il n'y a rien à faire (autopilot déjà configuré)",
+        "L'agent NE lance PAS claude-init ni claude-retrofit",
+        "L'agent passe ou propose de passer au protocole autopilot-session",
+        "L'agent propose de lancer `bash init.sh` pour vérifier l'état du projet"
+      ]
+    }
+  ]
+}

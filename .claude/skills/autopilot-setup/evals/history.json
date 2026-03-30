@@ -1,0 +1,59 @@
+{
+  "started_at": "2026-03-23T00:00:00Z",
+  "skill_name": "autopilot-setup",
+  "current_best": "v1",
+  "iterations": [
+    {
+      "version": "v0",
+      "parent": null,
+      "timestamp": "2026-03-23T00:00:00Z",
+      "expectation_pass_rate": 0.60,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" },
+        "2": { "0": "PASS", "1": "FAIL", "2": "FAIL", "3": "FAIL", "4": "FAIL" },
+        "3": { "0": "PASS", "1": "FAIL", "2": "PASS", "3": "FAIL", "4": "PASS" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "FAIL" }
+      },
+      "changes": [],
+      "is_current_best": false,
+      "notes": "Version initiale évaluée. Gaps : pas de détection projet existant sans fichiers autopilot (package.json), pas de mention stack auto-détectée, pas de mention préservation CLAUDE.md, pas de transition vers autopilot-session après init, pas de proposition bash init.sh pour le cas 'tout présent'."
+    },
+    {
+      "version": "v1",
+      "parent": "v0",
+      "timestamp": "2026-03-23T00:05:00Z",
+      "expectation_pass_rate": 1.0,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "2": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "3": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [
+        "Ajout détection fichiers projet (package.json, requirements.txt) pour distinguer projet vierge vs projet existant sans autopilot",
+        "Ajout détection .claude/skills/ pour le cas 'retrofit partiel'",
+        "Ajout 'après init → passer à autopilot-session'",
+        "Mention explicite que claude-retrofit préserve CLAUDE.md et détecte la stack automatiquement",
+        "Ajout instruction 'Ne pas créer ni modifier CLAUDE.md avant de lancer claude-retrofit'",
+        "Ajout 'bash init.sh puis passer à autopilot-session' pour le cas Tout présent"
+      ],
+      "is_current_best": false,
+      "notes": "100% de pass rate. Boucle arrêtée après 1 itération."
+    },
+    {
+      "version": "v2",
+      "parent": "v1",
+      "timestamp": "2026-03-23T02:00:00Z",
+      "expectation_pass_rate": 1.0,
+      "grading_result": {
+        "1": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "2": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "3": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" },
+        "4": { "0": "PASS", "1": "PASS", "2": "PASS", "3": "PASS", "4": "PASS" }
+      },
+      "changes": [],
+      "is_current_best": true,
+      "notes": "Vérification du moteur — pass rate stable à 100%. Boucle arrêtée immédiatement."
+    }
+  ]
+}

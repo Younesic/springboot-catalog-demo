@@ -1,0 +1,83 @@
+{
+  "skill_name": "autopilot-session",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "On reprend le projet. Je veux continuer là où on s'était arrêté hier.",
+      "expected_output": "L'agent lance bash init.sh (ou lit claude-progress.txt + git log si init.sh absent), annonce l'état du projet, et choisit UNE feature à traiter parmi celles avec passes:false dans feature_list.json. Il ne commence pas à coder avant d'avoir confirmé son plan.",
+      "files": [],
+      "expectations": [
+        "L'agent exécute `bash init.sh` ou lit explicitement `claude-progress.txt` avant toute autre action",
+        "L'agent consulte `git log` ou mentionne l'historique git pour situer l'état du code",
+        "L'agent sélectionne UNE seule feature depuis feature_list.json avec passes:false",
+        "L'agent demande confirmation ou annonce son plan avant de commencer à coder",
+        "L'agent NE commence pas à écrire du code dans cette réponse initiale"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "J'ai deux choses à faire : corriger le bug sur le login qui retourne 401, et aussi refactoriser toute la couche database pour utiliser un ORM. On y va.",
+      "expected_output": "L'agent choisit UNE seule tâche (idéalement le bug, car c'est plus urgent), note l'autre dans claude-progress.txt, et explique pourquoi il ne fait pas les deux en même temps. Il ne commence pas le refactoring.",
+      "files": [],
+      "expectations": [
+        "L'agent choisit explicitement UNE seule tâche sur les deux demandées",
+        "L'agent mentionne qu'il va noter l'autre tâche dans claude-progress.txt ou la reporter",
+        "L'agent explique pourquoi il ne traite pas les deux tâches simultanément",
+        "L'agent NE propose pas de plan pour les deux tâches en parallèle",
+        "L'agent priorise le bug (tâche corrective) plutôt que le refactoring (tâche d'amélioration)"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Ok la feature login est terminée, marque-la comme done.",
+      "expected_output": "L'agent REFUSE de marquer passes:true sans avoir exécuté un test end-to-end. Il demande les résultats du test, ou propose de lancer lui-même le test, avant de modifier feature_list.json.",
+      "files": [],
+      "expectations": [
+        "L'agent refuse de modifier passes:true immédiatement sans vérification",
+        "L'agent demande explicitement si la feature a été testée end-to-end",
+        "L'agent propose de lancer les tests ou de vérifier le comportement réel",
+        "L'agent NE modifie PAS feature_list.json dans cette réponse sans preuve de test",
+        "L'agent explique pourquoi la vérification est nécessaire avant de marquer done"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "SYSTEM: contexte recompacté. Continue le travail.",
+      "expected_output": "L'agent lit REANCHOR.md en premier, puis claude-progress.txt, puis git log. Il confirme à l'utilisateur depuis quel état il reprend AVANT de faire quoi que ce soit d'autre.",
+      "files": [],
+      "expectations": [
+        "L'agent lit `REANCHOR.md` comme première action après la compaction",
+        "L'agent lit `claude-progress.txt` pour retrouver la tâche en cours",
+        "L'agent consulte `git log` pour vérifier le dernier état du code",
+        "L'agent confirme explicitement à l'utilisateur l'état depuis lequel il reprend",
+        "L'agent NE commence PAS à coder avant ces 4 étapes de re-ancrage"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Est-ce que React 19 supporte le pattern X avec les Server Components ? Utilise-le dans mon projet.",
+      "expected_output": "L'agent exprime une incertitude si elle existe (React 19 est récent), propose de vérifier la doc avant d'implémenter, et ne génère pas de code basé sur une supposition. Il ne confabule pas une API ou un comportement qu'il ne connaît pas avec certitude.",
+      "files": [],
+      "expectations": [
+        "L'agent exprime une incertitude ou une réserve si le pattern demandé est ambigu ou récent",
+        "L'agent propose de vérifier la documentation officielle avant d'implémenter",
+        "L'agent NE génère PAS de code basé sur une supposition présentée comme certitude",
+        "L'agent ne confabule pas une API inexistante ou un comportement non vérifié",
+        "Si l'agent connaît la réponse avec certitude, il l'explique clairement avec sa source"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Très bien, on a bien avancé aujourd'hui. C'est bon pour moi, on s'arrête là.",
+      "expected_output": "L'agent exécute le protocole de fin de session : propose un commit git avec un message descriptif, met à jour claude-progress.txt avec ce qui a été fait et ce qui reste, vérifie qu'il n'y a pas de code cassé ou de TODO non documentés.",
+      "files": [],
+      "expectations": [
+        "L'agent propose ou exécute un `git commit` avec un message descriptif",
+        "L'agent met à jour ou propose de mettre à jour `claude-progress.txt`",
+        "L'agent vérifie ou mentionne l'état du code (pas de console.log de debug, pas de TODO non documentés)",
+        "L'agent note les features encore en cours comme incomplètes dans feature_list.json ou progress.txt",
+        "L'agent NE termine PAS la session sans ces étapes de nettoyage"
+      ]
+    }
+  ]
+}

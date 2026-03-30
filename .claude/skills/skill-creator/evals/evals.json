@@ -1,0 +1,85 @@
+{
+  "skill_name": "skill-creator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Améliore le skill autopilot-session. Les evals sont dans .claude/skills/autopilot-session/evals/evals.json.",
+      "expected_output": "L'agent lit SKILL.md et evals.json, grade chaque assertion de chaque scénario (PASS/FAIL avec justification), calcule le pass rate global, identifie les assertions en échec, et ne commence à réécrire que si le pass rate est < 85%.",
+      "files": [
+        ".claude/skills/autopilot-session/SKILL.md",
+        ".claude/skills/autopilot-session/evals/evals.json"
+      ],
+      "expectations": [
+        "L'agent lit explicitement SKILL.md et evals.json avant toute autre action",
+        "L'agent grade chaque assertion de chaque scénario avec PASS ou FAIL et une justification",
+        "L'agent calcule et affiche le pass rate global (ex: 16/30 = 53%)",
+        "L'agent identifie et groupe les assertions FAIL par cause racine avant de réécrire",
+        "L'agent ne réécrit pas SKILL.md si le pass rate est déjà >= 85%"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Améliore le skill autopilot-session. Le pass rate actuel est déjà 93%. Lance la boucle.",
+      "expected_output": "L'agent grade les assertions, constate que le pass rate est >= 85%, annonce qu'il arrête la boucle, et produit un rapport final sans modifier SKILL.md.",
+      "files": [
+        ".claude/skills/autopilot-session/SKILL.md",
+        ".claude/skills/autopilot-session/evals/evals.json"
+      ],
+      "expectations": [
+        "L'agent grade les assertions pour vérifier le pass rate réel (ne se fie pas au chiffre donné)",
+        "L'agent annonce explicitement l'arrêt de la boucle car pass rate >= 85%",
+        "L'agent NE modifie PAS SKILL.md quand le seuil est atteint",
+        "L'agent produit un rapport final avec le pass rate et les éventuelles assertions résiduelles",
+        "L'agent NE lance PAS d'itérations supplémentaires après l'arrêt"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Le skill autopilot-session échoue sur 3 assertions liées au protocole post-compaction. Améliore-le.",
+      "expected_output": "L'agent identifie la section 'Après compaction' comme responsable, modifie uniquement cette section, n'altère pas les autres sections du SKILL.md, et vérifie que les 3 assertions passent après la réécriture.",
+      "files": [
+        ".claude/skills/autopilot-session/SKILL.md",
+        ".claude/skills/autopilot-session/evals/evals.json"
+      ],
+      "expectations": [
+        "L'agent identifie la cause racine des échecs (section 'Après compaction' insuffisante)",
+        "L'agent modifie UNIQUEMENT les sections responsables des échecs, pas le reste du SKILL.md",
+        "L'agent ajoute des exemples concrets ou des règles plus explicites pour les assertions en échec",
+        "L'agent NE supprime PAS de règles existantes sauf si elles causent activement des échecs",
+        "L'agent re-grade les assertions après réécriture pour vérifier l'amélioration"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Après avoir amélioré autopilot-session de v1 à v2, mets à jour history.json.",
+      "expected_output": "L'agent écrit une entrée v2 dans history.json avec les champs corrects : version, parent, timestamp, expectation_pass_rate, grading_result (par scenario_id et assertion_index), changes, is_current_best. Il met is_current_best:false sur toutes les versions précédentes.",
+      "files": [
+        ".claude/skills/autopilot-session/evals/history.json"
+      ],
+      "expectations": [
+        "L'agent écrit une nouvelle entrée avec les champs : version, parent, timestamp, expectation_pass_rate, grading_result, changes, is_current_best",
+        "Le champ grading_result contient les résultats par scenario_id et par assertion_index (PASS/FAIL)",
+        "Le champ changes liste les modifications apportées au SKILL.md (non vide si des changements ont été faits)",
+        "L'agent met is_current_best:true sur la nouvelle version et is_current_best:false sur toutes les précédentes",
+        "L'agent NE supprime PAS les entrées précédentes de history.json"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Lance le moteur sur autopilot-session. Après 5 itérations, le pass rate est bloqué à 70%. Que fais-tu ?",
+      "expected_output": "L'agent arrête la boucle après 5 itérations, produit un rapport final listant les assertions encore en échec avec leur raison, et ne tente pas de 6ème itération. Il met à jour history.json avec la dernière version.",
+      "files": [
+        ".claude/skills/autopilot-session/SKILL.md",
+        ".claude/skills/autopilot-session/evals/evals.json",
+        ".claude/skills/autopilot-session/evals/history.json"
+      ],
+      "expectations": [
+        "L'agent arrête la boucle exactement après 5 itérations sans en lancer une 6ème",
+        "L'agent produit un rapport final avec : skill, itérations, pass rate initial → final",
+        "Le rapport liste les assertions encore en échec avec leur raison spécifique",
+        "L'agent met à jour history.json avec la dernière itération même si le seuil n'est pas atteint",
+        "L'agent NE modifie PAS SKILL.md après l'arrêt de la boucle"
+      ]
+    }
+  ]
+}
