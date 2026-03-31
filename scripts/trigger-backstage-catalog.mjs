@@ -1,214 +1,588 @@
 #!/usr/bin/env node
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-/**
- * Trigger Backstage Scaffolder to create a catalog component PR.
- *
- * Required env vars:
- *   BACKSTAGE_URL              – e.g. https://backstage.example.com
- *   BACKSTAGE_TOKEN            – Bearer token for the Scaffolder API
- *   OWNER_GROUP_REF            – e.g. group:default/team-cib
- *   COMPONENT_NAME             – name of the component (repo name)
- *
- * Optional env vars (metadata from previous CI jobs):
- *   COMPONENT_TYPE             – default "service"
- *   LIFECYCLE                  – default "experimental"
- *   DEPENDENCY_TRACK_PROJECT_ID – UUID from Dependency-Track step
- *   HARBOR_REPOSITORY_SLUG     – e.g. platform/springboot-catalog-demo
- *   IMAGE_REF                  – full image ref e.g. harbor.example.com/platform/repo:sha
- *   ARGOCD_APP_NAME_DEV        – e.g. app-springboot-catalog-demo-dev
- *   ARGOCD_APP_URL_DEV         – e.g. https://argocd.example.com/applications/argocd/app-...-dev
- */
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-const {
-  BACKSTAGE_URL,
-  BACKSTAGE_TOKEN,
-  OWNER_GROUP_REF,
-  COMPONENT_NAME,
-  COMPONENT_TYPE = 'service',
-  LIFECYCLE = 'experimental',
-  DEPENDENCY_TRACK_PROJECT_ID,
-  HARBOR_REPOSITORY_SLUG,
-  IMAGE_REF,
-  ARGOCD_APP_NAME_DEV,
-  ARGOCD_APP_URL_DEV,
-} = process.env;
+const DEFAULT_TEMPLATE_REF = 'template:default/catalog-component-gitops-v1';
+const DEFAULT_REPO_URL = 'github.com?owner=Younesic&repo=portal-catalog-components';
+const DEFAULT_TARGET_PATH = 'components';
+const DEFAULT_BRANCH_PREFIX = 'catalog-editor/create-component';
+const DEFAULT_COMPONENT_TYPE = 'service';
+const DEFAULT_COMPONENT_LIFECYCLE = 'experimental';
+const DEFAULT_TIMEOUT_SECONDS = 900;
+const DEFAULT_POLL_INTERVAL_MS = 4000;
+const DEFAULT_ALLOW_UNAUTH_FALLBACK = true;
+const DEFAULT_SKIP_OWNER_VALIDATION = true;
 
-// ── validation ───────────────────────────────────────────────
-const required = { BACKSTAGE_URL, BACKSTAGE_TOKEN, OWNER_GROUP_REF, COMPONENT_NAME };
-for (const [k, v] of Object.entries(required)) {
-  if (!v) {
-    console.error(`❌  Missing required env var: ${k}`);
-    process.exit(1);
+const sleep = ms => new Promise(resolvePromise => setTimeout(resolvePromise, ms));
+
+const firstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
   }
-}
-
-const baseUrl = BACKSTAGE_URL.replace(/\/+$/, '');
-
-// ── payload ──────────────────────────────────────────────────
-const values = {
-  repoUrl: 'github.com?owner=Younesic&repo=kratix-statestore',
-  targetPath: 'state/platform/cell-platform/backstage/resources/components',
-  branchPrefix: 'catalog-editor/create-component',
-  componentName: COMPONENT_NAME,
-  owner: OWNER_GROUP_REF,
-  componentType: COMPONENT_TYPE,
-  lifecycle: LIFECYCLE,
-  skipOwnerValidation: true,
-  // optional descriptive fields
-  componentTitle: COMPONENT_NAME,
-  description: 'Created automatically from GitHub Actions',
-  tags: ['ci', 'catalog', 'demo'],
+  return undefined;
 };
 
-// Inject metadata from previous CI jobs if available
-if (DEPENDENCY_TRACK_PROJECT_ID) {
-  values.dependencyTrackProjectId = DEPENDENCY_TRACK_PROJECT_ID;
-} else {
-  values.dependencyTrackProjectId = `dtrack-${COMPONENT_NAME}`;
-}
-
-if (HARBOR_REPOSITORY_SLUG) {
-  values.harborRepositorySlug = HARBOR_REPOSITORY_SLUG;
-} else {
-  values.harborRepositorySlug = `platform/${COMPONENT_NAME}`;
-}
-
-const payload = {
-  templateRef: 'template:default/catalog-component-gitops-v1',
-  values,
+const normalizeComponentName = rawValue => {
+  const normalized = rawValue.trim().toLowerCase();
+  if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(normalized)) {
+    throw new Error(
+      `Invalid component name '${rawValue}'. Expected [a-z0-9]([-a-z0-9]*[a-z0-9])?.`,
+    );
+  }
+  return normalized;
 };
 
-// ── log enriched payload ─────────────────────────────────────
-console.log('📦  Enriched Scaffolder payload:');
-console.log(`    dependencyTrackProjectId = ${values.dependencyTrackProjectId}`);
-console.log(`    harborRepositorySlug     = ${values.harborRepositorySlug}`);
-if (IMAGE_REF) console.log(`    imageRef                 = ${IMAGE_REF}`);
-if (ARGOCD_APP_NAME_DEV) console.log(`    argocdAppNameDev         = ${ARGOCD_APP_NAME_DEV}`);
-if (ARGOCD_APP_URL_DEV) console.log(`    argocdAppUrlDev          = ${ARGOCD_APP_URL_DEV}`);
+const sanitizePackageName = packageName => {
+  const withoutScope = packageName.includes('/')
+    ? packageName.split('/').pop()
+    : packageName;
+  if (!withoutScope) {
+    return undefined;
+  }
+  const normalized = withoutScope
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || undefined;
+};
 
-// ── helpers ──────────────────────────────────────────────────
-async function api(path, opts = {}) {
-  const url = `${baseUrl}${path}`;
-  const res = await fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${BACKSTAGE_TOKEN}`,
-      ...opts.headers,
-    },
+const canonicalizeOwnerGroupRef = rawValue => {
+  const value = rawValue.trim().toLowerCase();
+  if (!value) {
+    return undefined;
+  }
+  if (value.startsWith('group:')) {
+    const match = value.match(/^group:([a-z0-9._-]+)\/([a-z0-9][a-z0-9._-]*)$/);
+    return match ? `group:${match[1]}/${match[2]}` : undefined;
+  }
+  if (value.includes('/')) {
+    return canonicalizeOwnerGroupRef(`group:${value}`);
+  }
+  return canonicalizeOwnerGroupRef(`group:default/${value}`);
+};
+
+const parseCsv = rawValue => {
+  if (!rawValue || !rawValue.trim()) {
+    return undefined;
+  }
+  const values = rawValue
+    .split(',')
+    .map(token => token.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+};
+
+const readPackageJson = cwd => {
+  const path = resolve(cwd, 'package.json');
+  if (!existsSync(path)) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
+};
+
+const readPomXml = cwd => {
+  const path = resolve(cwd, 'pom.xml');
+  if (!existsSync(path)) {
+    return undefined;
+  }
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return undefined;
+  }
+};
+
+const extractPomTag = (pomXml, tag) => {
+  const pattern = new RegExp(`<${tag}>([^<]+)</${tag}>`, 'i');
+  const match = pomXml.match(pattern);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  return match[1].trim();
+};
+
+const resolveOwnerGroupRef = cwd => {
+  const envOwner = firstNonEmpty(
+    process.env.OWNER_GROUP_REF,
+    process.env.CATALOG_OWNER_GROUP_REF,
+    process.env.OWNER_GROUP,
+  );
+  if (envOwner) {
+    const canonical = canonicalizeOwnerGroupRef(envOwner);
+    if (!canonical) {
+      throw new Error(`Invalid owner group '${envOwner}'.`);
+    }
+    return canonical;
+  }
+
+  const teamSlug = firstNonEmpty(process.env.TEAM_SLUG, process.env.CATALOG_TEAM_SLUG);
+  if (teamSlug) {
+    const normalizedTeam = teamSlug
+      .toLowerCase()
+      .replace(/^team-/, '')
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!normalizedTeam) {
+      throw new Error(`Invalid TEAM_SLUG '${teamSlug}'.`);
+    }
+    return `group:default/team-${normalizedTeam}`;
+  }
+
+  const packageJson = readPackageJson(cwd);
+  if (packageJson && typeof packageJson === 'object') {
+    const backstage = packageJson.backstage || {};
+    const ownerCandidate = firstNonEmpty(
+      backstage.ownerGroupRef,
+      backstage.ownerGroup,
+      backstage.owner,
+      packageJson.ownerGroupRef,
+      packageJson.ownerGroup,
+      packageJson.owner,
+    );
+    if (ownerCandidate) {
+      const canonical = canonicalizeOwnerGroupRef(ownerCandidate);
+      if (!canonical) {
+        throw new Error(`Invalid owner group in package.json: '${ownerCandidate}'.`);
+      }
+      return canonical;
+    }
+  }
+
+  const pomXml = readPomXml(cwd);
+  if (pomXml) {
+    const ownerCandidate = firstNonEmpty(
+      extractPomTag(pomXml, 'backstage.ownerGroupRef'),
+      extractPomTag(pomXml, 'backstage.ownerGroup'),
+      extractPomTag(pomXml, 'backstage.owner'),
+      extractPomTag(pomXml, 'ownerGroupRef'),
+      extractPomTag(pomXml, 'ownerGroup'),
+    );
+    if (ownerCandidate) {
+      const canonical = canonicalizeOwnerGroupRef(ownerCandidate);
+      if (!canonical) {
+        throw new Error(`Invalid owner group in pom.xml: '${ownerCandidate}'.`);
+      }
+      return canonical;
+    }
+  }
+
+  throw new Error(
+    'Owner group not found. Provide OWNER_GROUP_REF / TEAM_SLUG, or set package.json.backstage.ownerGroup (or pom.xml backstage.ownerGroup).',
+  );
+};
+
+const resolveComponentName = cwd => {
+  const envComponentName = firstNonEmpty(
+    process.env.COMPONENT_NAME,
+    process.env.CATALOG_COMPONENT_NAME,
+  );
+  if (envComponentName) {
+    return normalizeComponentName(envComponentName);
+  }
+
+  const packageJson = readPackageJson(cwd);
+  if (packageJson && typeof packageJson === 'object') {
+    const backstage = packageJson.backstage || {};
+    const candidate = firstNonEmpty(backstage.componentName, packageJson.name);
+    if (candidate) {
+      const normalized = sanitizePackageName(candidate);
+      if (normalized) {
+        return normalizeComponentName(normalized);
+      }
+    }
+  }
+
+  const pomXml = readPomXml(cwd);
+  if (pomXml) {
+    const artifactId = extractPomTag(pomXml, 'artifactId');
+    if (artifactId) {
+      const normalized = sanitizePackageName(artifactId);
+      if (normalized) {
+        return normalizeComponentName(normalized);
+      }
+    }
+  }
+
+  throw new Error(
+    'Component name not found. Provide COMPONENT_NAME, or set package.json.name / pom.xml artifactId.',
+  );
+};
+
+const normalizeBackstageToken = rawToken => {
+  if (!rawToken || typeof rawToken !== 'string') {
+    return '';
+  }
+  const trimmed = rawToken.trim().replace(/^['"]|['"]$/g, '');
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.replace(/^Bearer\s+/i, '').trim();
+};
+
+const toHeaders = token => {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token && token.trim()) {
+    headers.Authorization = `Bearer ${token.trim()}`;
+  }
+  return headers;
+};
+
+const parseBooleanEnv = (value, defaultValue) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return defaultValue;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return false;
+  }
+  return defaultValue;
+};
+
+const looksLikeIllegalTokenError = payloadText =>
+  /illegal token|could not resolve credentials|authenticationerror/i.test(
+    payloadText || '',
+  );
+
+const fetchWithAuthFallback = async ({
+  url,
+  method = 'GET',
+  token,
+  body,
+  allowUnauthFallback,
+}) => {
+  const headers = toHeaders(token);
+  const response = await fetch(url, {
+    method,
+    headers,
+    body,
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API ${res.status} ${res.statusText} – ${url}\n${text}`);
+  if (!allowUnauthFallback || !token) {
+    return { response, usedToken: Boolean(token), payloadText: undefined };
   }
-  return res.json();
-}
+  if (response.status !== 401) {
+    return { response, usedToken: true, payloadText: undefined };
+  }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+  const payloadText = await response.text();
+  if (!looksLikeIllegalTokenError(payloadText)) {
+    return { response, usedToken: true, payloadText };
+  }
 
-// ── main ─────────────────────────────────────────────────────
-async function main() {
-  console.log(`\n🚀  Creating scaffolder task for component "${COMPONENT_NAME}" …`);
-  const { id: taskId } = await api('/api/scaffolder/v2/tasks', {
+  const retry = await fetch(url, {
+    method,
+    headers: toHeaders(''),
+    body,
+  });
+  return { response: retry, usedToken: false, payloadText };
+};
+
+const componentExistsInCatalog = async ({
+  backstageUrl,
+  backstageToken,
+  componentName,
+  allowUnauthFallback,
+}) => {
+  const { response, usedToken, payloadText } = await fetchWithAuthFallback({
+    url: `${backstageUrl}/api/catalog/entities/by-name/component/default/${encodeURIComponent(
+      componentName,
+    )}`,
+    method: 'GET',
+    token: backstageToken,
+    allowUnauthFallback,
+  });
+
+  if (response.status === 404) {
+    return false;
+  }
+  if (response.ok) {
+    if (!usedToken && backstageToken) {
+      console.log(
+        '[catalog-ci] provided BACKSTAGE_TOKEN was rejected; fallback to unauthenticated request succeeded.',
+      );
+    }
+    return true;
+  }
+
+  const payload = payloadText ?? (await response.text());
+  throw new Error(
+    `Unable to check component existence in catalog: ${payload || response.statusText}`,
+  );
+};
+
+const readTaskOutput = taskPayload => {
+  if (!taskPayload || typeof taskPayload !== 'object') {
+    return {};
+  }
+  if (taskPayload.output && typeof taskPayload.output === 'object') {
+    return taskPayload.output;
+  }
+  if (taskPayload.task && typeof taskPayload.task === 'object') {
+    const nested = taskPayload.task.output;
+    if (nested && typeof nested === 'object') {
+      return nested;
+    }
+  }
+  return {};
+};
+
+const extractPrUrlFromOutput = output => {
+  if (!output || typeof output !== 'object') {
+    return undefined;
+  }
+  const links = output.links;
+  if (!Array.isArray(links)) {
+    return undefined;
+  }
+  const pullRequestLink = links.find(
+    link =>
+      typeof link?.title === 'string' &&
+      /pull request/i.test(link.title) &&
+      typeof link?.url === 'string' &&
+      link.url.trim(),
+  );
+  if (pullRequestLink?.url?.trim()) {
+    return pullRequestLink.url.trim();
+  }
+  const inferredFromAnyLink = links.find(
+    link =>
+      typeof link?.url === 'string' &&
+      /\/pull\/\d+/i.test(link.url.trim()),
+  );
+  return inferredFromAnyLink?.url?.trim();
+};
+
+const extractFirstPullUrl = value => {
+  if (!value) {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    return /https?:\/\/[^"'\s]+\/pull\/\d+/i.test(value) ? value : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const match = extractFirstPullUrl(entry);
+      if (match) {
+        return match;
+      }
+    }
+    return undefined;
+  }
+  if (typeof value === 'object') {
+    for (const entry of Object.values(value)) {
+      const match = extractFirstPullUrl(entry);
+      if (match) {
+        return match;
+      }
+    }
+  }
+  return undefined;
+};
+
+const extractPrUrlFromEvents = eventsPayload => {
+  if (!Array.isArray(eventsPayload)) {
+    return undefined;
+  }
+  for (let index = eventsPayload.length - 1; index >= 0; index -= 1) {
+    const event = eventsPayload[index];
+    const completionOutput = event?.body?.output;
+    const fromOutput = extractPrUrlFromOutput(completionOutput);
+    if (fromOutput) {
+      return fromOutput;
+    }
+    const fromEventBody = extractFirstPullUrl(event?.body);
+    if (fromEventBody) {
+      return fromEventBody;
+    }
+  }
+  return undefined;
+};
+
+const main = async () => {
+  const cwd = process.cwd();
+  const backstageUrl = (
+    process.env.BACKSTAGE_URL || 'http://localhost:7007'
+  ).replace(/\/+$/, '');
+  const backstageToken = normalizeBackstageToken(process.env.BACKSTAGE_TOKEN || '');
+  const templateRef = process.env.CATALOG_TEMPLATE_REF || DEFAULT_TEMPLATE_REF;
+  const timeoutSeconds = Number(
+    process.env.TASK_TIMEOUT_SECONDS || DEFAULT_TIMEOUT_SECONDS,
+  );
+  const pollIntervalMs = Number(
+    process.env.TASK_POLL_INTERVAL_MS || DEFAULT_POLL_INTERVAL_MS,
+  );
+  const waitForCompletion =
+    (process.env.WAIT_FOR_COMPLETION || 'true').trim().toLowerCase() !== 'false';
+  const allowUnauthFallback = parseBooleanEnv(
+    process.env.BACKSTAGE_ALLOW_UNAUTH_FALLBACK,
+    DEFAULT_ALLOW_UNAUTH_FALLBACK,
+  );
+  const skipOwnerValidation = parseBooleanEnv(
+    process.env.CATALOG_SKIP_OWNER_VALIDATION,
+    DEFAULT_SKIP_OWNER_VALIDATION,
+  );
+
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+    throw new Error('TASK_TIMEOUT_SECONDS must be a positive number.');
+  }
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new Error('TASK_POLL_INTERVAL_MS must be a positive number.');
+  }
+
+  const componentName = resolveComponentName(cwd);
+  const ownerGroupRef = resolveOwnerGroupRef(cwd);
+
+  const values = {
+    repoUrl: process.env.CATALOG_REPO_URL || DEFAULT_REPO_URL,
+    targetPath: process.env.CATALOG_TARGET_PATH || DEFAULT_TARGET_PATH,
+    branchPrefix: process.env.CATALOG_BRANCH_PREFIX || DEFAULT_BRANCH_PREFIX,
+    componentName,
+    owner: ownerGroupRef,
+    componentTitle: firstNonEmpty(process.env.COMPONENT_TITLE),
+    description: firstNonEmpty(process.env.COMPONENT_DESCRIPTION),
+    componentType:
+      firstNonEmpty(process.env.COMPONENT_TYPE) || DEFAULT_COMPONENT_TYPE,
+    lifecycle:
+      firstNonEmpty(process.env.COMPONENT_LIFECYCLE) ||
+      DEFAULT_COMPONENT_LIFECYCLE,
+    system: firstNonEmpty(process.env.SYSTEM_REF, process.env.COMPONENT_SYSTEM_REF),
+    dependsOn: parseCsv(process.env.CATALOG_DEPENDS_ON),
+    providesApis: parseCsv(process.env.CATALOG_PROVIDES_APIS),
+    consumesApis: parseCsv(process.env.CATALOG_CONSUMES_APIS),
+    tags: parseCsv(process.env.CATALOG_TAGS),
+    dependencyTrackProjectId: firstNonEmpty(process.env.DEPENDENCY_TRACK_PROJECT_ID),
+    harborRepositorySlug: firstNonEmpty(process.env.HARBOR_REPOSITORY_SLUG),
+    skipOwnerValidation,
+  };
+
+  const filteredValues = Object.fromEntries(
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  );
+
+  const exists = await componentExistsInCatalog({
+    backstageUrl,
+    backstageToken,
+    componentName,
+    allowUnauthFallback,
+  });
+  if (exists) {
+    console.log(
+      `[catalog-ci] component 'component:default/${componentName}' already exists -> no PR created.`,
+    );
+    return;
+  }
+
+  const createBody = JSON.stringify({
+    templateRef,
+    values: filteredValues,
+  });
+  const {
+    response: createResponse,
+    usedToken: createUsedToken,
+    payloadText: createPayloadText,
+  } = await fetchWithAuthFallback({
+    url: `${backstageUrl}/api/scaffolder/v2/tasks`,
     method: 'POST',
-    body: JSON.stringify(payload),
+    token: backstageToken,
+    body: createBody,
+    allowUnauthFallback,
   });
-  console.log(`📋  Task created: ${taskId}`);
+  if (!createResponse.ok) {
+    const payload = createPayloadText ?? (await createResponse.text());
+    throw new Error(
+      `Unable to start scaffolder task: ${payload || createResponse.statusText}`,
+    );
+  }
+  if (!createUsedToken && backstageToken) {
+    console.log(
+      '[catalog-ci] provided BACKSTAGE_TOKEN was rejected; task creation used unauthenticated fallback.',
+    );
+  }
+  const createPayload = await createResponse.json();
+  const taskId =
+    typeof createPayload?.id === 'string' && createPayload.id.trim()
+      ? createPayload.id.trim()
+      : undefined;
+  if (!taskId) {
+    throw new Error('Scaffolder response did not include task id.');
+  }
 
-  // Poll for completion
-  const POLL_INTERVAL_MS = 5_000;
-  const MAX_POLLS = 120; // 10 minutes max
-  let status;
+  console.log(`[catalog-ci] task started: ${taskId}`);
+  console.log(`[catalog-ci] task url: ${backstageUrl}/create/tasks/${taskId}`);
 
-  for (let i = 0; i < MAX_POLLS; i++) {
-    await sleep(POLL_INTERVAL_MS);
-    const task = await api(`/api/scaffolder/v2/tasks/${taskId}`);
-    status = task.status;
-    console.log(`⏳  Poll ${i + 1}: status = ${status}`);
+  if (!waitForCompletion) {
+    return;
+  }
 
+  const startedAt = Date.now();
+  let finalTask;
+  while (Date.now() - startedAt < timeoutSeconds * 1000) {
+    const { response: taskResponse } = await fetchWithAuthFallback({
+      url: `${backstageUrl}/api/scaffolder/v2/tasks/${taskId}`,
+      method: 'GET',
+      token: backstageToken,
+      allowUnauthFallback,
+    });
+    if (!taskResponse.ok) {
+      const payload = await taskResponse.text();
+      throw new Error(
+        `Unable to read task '${taskId}': ${payload || taskResponse.statusText}`,
+      );
+    }
+    const taskPayload = await taskResponse.json();
+    const status = String(taskPayload?.status || '').toLowerCase();
     if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+      finalTask = taskPayload;
       break;
     }
+    await sleep(pollIntervalMs);
   }
 
-  if (status === 'failed' || status === 'cancelled') {
-    console.error(`❌  Task ${status}.`);
-    process.exit(1);
+  if (!finalTask) {
+    throw new Error(`Task '${taskId}' timed out after ${timeoutSeconds} seconds.`);
   }
 
+  const status = String(finalTask.status || '').toLowerCase();
   if (status !== 'completed') {
-    console.error('❌  Task did not complete within the timeout window.');
-    process.exit(1);
+    throw new Error(`Task '${taskId}' ended with status '${status}'.`);
   }
 
-  // Try to extract PR URL from events
-  let prUrl = null;
-  try {
-    const events = await api(`/api/scaffolder/v2/tasks/${taskId}/events`);
-    for (const event of events) {
-      const links = event?.body?.links ?? [];
-      for (const link of links) {
-        if (link?.url?.includes('pull')) {
-          prUrl = link.url;
-          break;
-        }
-      }
-      if (prUrl) break;
-
-      const msg = event?.body?.message ?? '';
-      const match = msg.match(/https?:\/\/[^\s]+pull[^\s]*/);
-      if (match) {
-        prUrl = match[0];
-        break;
-      }
-    }
-  } catch {
-    console.warn('⚠️  Could not fetch task events – skipping PR URL extraction.');
-  }
-
-  // Fallback: try task outputs
+  const output = readTaskOutput(finalTask);
+  let prUrl = extractPrUrlFromOutput(output);
   if (!prUrl) {
-    try {
-      const task = await api(`/api/scaffolder/v2/tasks/${taskId}`);
-      const outputs = task?.output ?? {};
-      if (outputs.links) {
-        for (const link of outputs.links) {
-          if (link?.url?.includes('pull')) {
-            prUrl = link.url;
-            break;
-          }
-        }
-      }
-      if (!prUrl && outputs.remoteUrl) {
-        prUrl = outputs.remoteUrl;
-      }
-    } catch {
-      // ignore
+    prUrl = extractFirstPullUrl(finalTask?.state);
+  }
+  if (!prUrl) {
+    const { response: eventsResponse } = await fetchWithAuthFallback({
+      url: `${backstageUrl}/api/scaffolder/v2/tasks/${taskId}/events`,
+      method: 'GET',
+      token: backstageToken,
+      allowUnauthFallback,
+    });
+    if (eventsResponse.ok) {
+      const eventsPayload = await eventsResponse.json();
+      prUrl = extractPrUrlFromEvents(eventsPayload);
     }
   }
-
   if (prUrl) {
-    console.log(`✅  Task completed! PR URL: ${prUrl}`);
+    console.log(`[catalog-ci] pull request: ${prUrl}`);
   } else {
-    console.log('✅  Task completed! (no PR URL found in events/outputs)');
+    console.log(
+      '[catalog-ci] task completed (PR link not returned by task payload).',
+    );
   }
+};
 
-  // Verification: log expected catalog-info metadata
-  console.log('\n📋  Expected catalog-info.yaml metadata in the PR:');
-  console.log('    metadata.annotations:');
-  console.log(`      dependencytrack/project-id: "${values.dependencyTrackProjectId}"`);
-  console.log(`      goharbor.io/repository-slug: "${values.harborRepositorySlug}"`);
-  console.log('    metadata.links:');
-  console.log('      - title: GitOps Service');
-  if (ARGOCD_APP_URL_DEV) {
-    console.log(`      - title: ArgoCD Dev → ${ARGOCD_APP_URL_DEV}`);
-  }
-}
-
-main().catch((err) => {
-  console.error('❌  Fatal error:', err.message ?? err);
-  process.exit(1);
+main().catch(error => {
+  console.error(`[catalog-ci][error] ${(error && error.message) || String(error)}`);
+  process.exitCode = 1;
 });
