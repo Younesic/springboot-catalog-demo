@@ -21,6 +21,14 @@ const DEFAULT_POLL_INTERVAL_MS = 4000;
 const DEFAULT_ALLOW_UNAUTH_FALLBACK = true;
 const DEFAULT_SKIP_OWNER_VALIDATION = true;
 
+const isTruthyEnv = value =>
+  typeof value === 'string' &&
+  ['true', '1', 'yes'].includes(value.trim().toLowerCase());
+
+if (isTruthyEnv(process.env.BACKSTAGE_INSECURE_TLS)) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
+
 const sleep = ms => new Promise(resolvePromise => setTimeout(resolvePromise, ms));
 
 const firstNonEmpty = (...values) => {
