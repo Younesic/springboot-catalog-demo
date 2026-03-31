@@ -141,6 +141,9 @@ jobs:
           BACKSTAGE_INSECURE_TLS: 'true'
           OWNER_GROUP_REF: ${{ secrets.OWNER_GROUP_REF }}
           COMPONENT_NAME: ${{ env.COMPONENT_NAME }}
+          SERVICE_CONFIG_GITOPS_REPO_URL: github.com?owner=Younesic&repo=springboot-catalog-demo-config
+          SERVICE_CONFIG_GITOPS_BRANCH: main
+          SERVICE_CONFIG_GITOPS_TARGET_PATH: services/springboot-catalog-demo
           DEPENDENCY_TRACK_PROJECT_ID: ${{ needs.dependency_track.outputs.dependency_track_project_id }}
           HARBOR_REPOSITORY_SLUG: ${{ needs.container_publish.outputs.harbor_repository_slug }}
           IMAGE_REF: ${{ needs.container_publish.outputs.image_ref }}

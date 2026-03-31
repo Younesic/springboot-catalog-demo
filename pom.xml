@@ -20,6 +20,11 @@
   <properties>
     <java.version>17</java.version>
     <backstage.ownerGroupRef>group:default/team-cib</backstage.ownerGroupRef>
+    <backstage.component.name>springboot-catalog-demo</backstage.component.name>
+    <backstage.component.ref>component:default/springboot-catalog-demo</backstage.component.ref>
+    <backstage.component.owner>group:default/team-cib</backstage.component.owner>
+    <backstage.component.type>service</backstage.component.type>
+    <backstage.component.lifecycle>experimental</backstage.component.lifecycle>
   </properties>
 
   <dependencies>
