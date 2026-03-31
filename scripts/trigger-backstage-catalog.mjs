@@ -426,10 +426,21 @@ const main = async () => {
     process.env.BACKSTAGE_ALLOW_UNAUTH_FALLBACK,
     DEFAULT_ALLOW_UNAUTH_FALLBACK,
   );
+  const insecureTls = parseBooleanEnv(
+    process.env.BACKSTAGE_INSECURE_TLS,
+    false,
+  );
   const skipOwnerValidation = parseBooleanEnv(
     process.env.CATALOG_SKIP_OWNER_VALIDATION,
     DEFAULT_SKIP_OWNER_VALIDATION,
   );
+
+  if (insecureTls) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+    console.warn(
+      '[catalog-ci] BACKSTAGE_INSECURE_TLS=true -> TLS certificate verification disabled for Backstage requests.',
+    );
+  }
 
   if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
     throw new Error('TASK_TIMEOUT_SECONDS must be a positive number.');

@@ -138,6 +138,7 @@ jobs:
         env:
           BACKSTAGE_URL: ${{ secrets.BACKSTAGE_URL }}
           BACKSTAGE_TOKEN: ${{ secrets.BACKSTAGE_TOKEN }}
+          BACKSTAGE_INSECURE_TLS: 'true'
           OWNER_GROUP_REF: ${{ secrets.OWNER_GROUP_REF }}
           COMPONENT_NAME: ${{ env.COMPONENT_NAME }}
           DEPENDENCY_TRACK_PROJECT_ID: ${{ needs.dependency_track.outputs.dependency_track_project_id }}
